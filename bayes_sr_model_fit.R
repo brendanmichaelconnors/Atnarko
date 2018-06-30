@@ -28,7 +28,7 @@ years = age[,"year"]
 
 # escapement: assume a 30% observation CV if directly observed, 50% otherwise
 
-S.cv = ifelse(esc[,3] == 1, 0.3, 0.10)
+S.cv = ifelse(esc[,3] == 1, 0.3, 0.50)
 S.obs = esc[,2]
 
 # harvest: assume a 15% observation CV if directly observed, 30% otherwise
@@ -179,7 +179,7 @@ ptm = proc.time()
 	              n.iter=300000, model.file=modelFilename,n.burnin = 50000,n.chains=6)
 
 endtime = proc.time()-ptm
-endtime[3]/60/60
+endtime[3]/60
 
 post = as.mcmc(jagsfit.p)
 mypost = as.matrix(post, chain=F)
