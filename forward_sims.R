@@ -2,6 +2,9 @@
 # Run closed loop simulations across a range of harves rates
 #------------------------------------------------------------------------------#
 
+#load posterior samples
+posteriors = read.csv("outputs/Atnarko_posteriors.June292018.csv")
+
 # set number of simulations and create array to store results 
 num.sims = 10000
 ny = 27 #(7 years plus length of forward sim)
@@ -48,12 +51,12 @@ for (w in 1:length(harvest_rate)){
 	}	
 	
 outcomes.1[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.5),na.rm=T)
-outcomes.1.lower[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.025),na.rm=T)
-outcomes.1.upper[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.975),na.rm=T)
-outcomes.1.lower25[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.25),na.rm=T)
-outcomes.1.upper75[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.75),na.rm=T)
-outcomes.1.lower10[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.10),na.rm=T)
-outcomes.1.upper90[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.90),na.rm=T)
+outcomes.1.lower[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.10),na.rm=T)
+outcomes.1.upper[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.9),na.rm=T)
+outcomes.1.lower25[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.20),na.rm=T)
+outcomes.1.upper75[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.80),na.rm=T)
+outcomes.1.lower10[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.40),na.rm=T)
+outcomes.1.upper90[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.6),na.rm=T)
 outcomes.4[,,w] <- apply(outcomes.3,c(1,2),mean,na.rm=T)
 
 }

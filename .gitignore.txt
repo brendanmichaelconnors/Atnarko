@@ -1,0 +1,3 @@
+# Ignore posteriors when pushing to GitHub 
+scratch.R
+/outputs/

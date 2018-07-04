@@ -101,9 +101,8 @@ process = function(ny,Ro,phi,mat,U,alpha,beta,sigma.R,Rec,Spw,lst.resid){
 	}
 
 #------------------------------------------------------------------------------#
-# Function to load posteriors and sample them for forward simulations
+# Function to sample from posteriors for forward simulations
 #------------------------------------------------------------------------------#	
-posteriors = read.csv("data/Atnarko_posteriors.June252018.csv")
 
 process.iteration = function(samp) {
   # 1.) extract names

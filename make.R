@@ -6,6 +6,9 @@ rm(list = ls())
 
 source("load.R")
 
+# generate Figure 2: Exploitation and run time series
+
+source("figure_2.R")
 #------------------------------------------------------------------------------#
 # Fit age-structures state-space stock-recruit model to data
 #------------------------------------------------------------------------------#

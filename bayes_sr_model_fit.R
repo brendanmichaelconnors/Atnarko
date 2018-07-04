@@ -10,8 +10,8 @@ harv = read.csv("data/HarTab.csv")
 #   Set beta prior for stock  
 #------------------------------------------------------------------------------#
 
-#SMAX <- mean(esc[,2]) # mean escapement over time series
-SMAX <- 14586 # lake habitat (photosynthetic rate) based estimate of lake capacity
+SMAX <- mean(esc[,2]) # mean escapement over time series
+#SMAX <- 21300 # lake habitat (photosynthetic rate) based estimate of lake capacity
 
 bpmu = 1/SMAX # turn SMAX into beta prior
 bptau = 1/((3*(1/SMAX))^2)  # set CV on prior
@@ -28,7 +28,7 @@ years = age[,"year"]
 
 # escapement: assume a 30% observation CV if directly observed, 50% otherwise
 
-S.cv = ifelse(esc[,3] == 1, 0.3, 0.50)
+S.cv = ifelse(esc[,3] == 1, 0.2, 0.40)
 S.obs = esc[,2]
 
 # harvest: assume a 15% observation CV if directly observed, 30% otherwise
@@ -175,7 +175,7 @@ model {
 #------------------------------------------------------------------------------#
 ptm = proc.time()
 
-	jagsfit.p <- jags.parallel(data=jags.data,  parameters.to.save=jags.parms,n.thin=5,
+	jagsfit.p <- jags.parallel(data=jags.data,  parameters.to.save=jags.parms,n.thin=15,
 	              n.iter=300000, model.file=modelFilename,n.burnin = 50000,n.chains=6)
 
 endtime = proc.time()-ptm
@@ -184,11 +184,13 @@ endtime[3]/60
 post = as.mcmc(jagsfit.p)
 mypost = as.matrix(post, chain=F)
 
-write.csv(mypost,"data/Atnarko_posteriors.June252018.csv")
+write.csv(mypost,"outputs/Atnarko_posteriors.June292018.csv")
 
 #------------------------------------------------------------------------------#
 # Model diagnostics and parameter summary
 #------------------------------------------------------------------------------#
+
+#potential scale reduction factor
 
 gelman.diag(post, multivariate = F)
 
