@@ -3962,3 +3962,1006 @@ text(18.5,89,"40%",pos=4,cex=0.8)#
 text(14.,98,"Harvest rate",pos=4,cex=0.8)#
 #
 dev.off()
+age = read.csv("data/AgeCompTab.csv")#
+esc = read.csv("data/EscTab.csv")#
+harv = read.csv("data/HarTab.csv")#
+#------------------------------------------------------------------------------##
+#   Set beta prior for stock (uniform (uninformative) prior can be commented in#
+#	or out in model description (line 57)) #
+#------------------------------------------------------------------------------##
+SMAX <- mean(esc[,2]) # mean escapement over time series#
+#SMAX <- 21300 # lake habitat (photosynthetic rate) based estimate of lake capacity#
+#
+bpmu = 1/SMAX # turn SMAX into beta prior#
+bptau = 1/((3*(1/SMAX))^2)  # set CV on prior#
+#------------------------------------------------------------------------------##
+#   Format data#
+#------------------------------------------------------------------------------##
+Y = nrow(age)             # number of calendar years observed#
+a.min = 3                 # minimum age class in data set#
+a.max = 6                 # maximum age class in data set#
+A = a.max - a.min + 1     # number of age classes#
+nRyrs = Y + A - 1         # number of recruitment years (see model code for details)#
+years = age[,"year"]#
+# escapement: assume a 20% observation CV if directly observed, 40% otherwise#
+S.cv = ifelse(esc[,3] == 1, 0.2, 0.40)#
+S.obs = esc[,2]#
+# harvest: assume a 15% observation CV if directly observed, 30% otherwise#
+C.cv = ifelse(harv[,3] == 1, 0.15, 0.30)
+C.cv
+harv
+## Load functions and libraries for analysis#
+#
+source("functions.R") #
+#
+library(grDevices)#
+library(plotrix)#
+library(R2jags) #
+library(modeest) #
+library(gplots)
+age = read.csv("data/AgeCompTab.csv")#
+esc = read.csv("data/EscTab.csv")#
+harv = read.csv("data/HarTab.csv")#
+#------------------------------------------------------------------------------##
+#   Set beta prior for stock (uniform (uninformative) prior can be commented in#
+#	or out in model description (line 57)) #
+#------------------------------------------------------------------------------##
+SMAX <- mean(esc[,2]) # mean escapement over time series#
+#SMAX <- 21300 # lake habitat (photosynthetic rate) based estimate of lake capacity#
+#
+bpmu = 1/SMAX # turn SMAX into beta prior#
+bptau = 1/((3*(1/SMAX))^2)  # set CV on prior#
+#------------------------------------------------------------------------------##
+#   Format data#
+#------------------------------------------------------------------------------##
+Y = nrow(age)             # number of calendar years observed#
+a.min = 3                 # minimum age class in data set#
+a.max = 6                 # maximum age class in data set#
+A = a.max - a.min + 1     # number of age classes#
+nRyrs = Y + A - 1         # number of recruitment years (see model code for details)#
+years = age[,"year"]#
+# escapement: assume a 20% observation CV if directly observed, 40% otherwise#
+S.cv = ifelse(esc[,3] == 1, 0.2, 0.40)#
+S.obs = esc[,2]#
+# harvest: assume a 15% observation CV for years when catch was high and dominated by commercial fishery, 30% in years since#
+C.cv = ifelse(harv[,3] == 1, 0.15, 0.30)#
+C.obs = harv[,2]#
+# age composition: assume a ESS of 100 if directly observed, 25 otherwise#
+ESS = ifelse(age$GoodData == 1, 100, 25)#
+X = age[,substr(names(age), 1, 1) == "X"]#
+X = t(apply(X, 1, function(x) x/sum(x)))#
+X = round(apply(X, 2, function(x) x * ESS))#
+colnames(X) = NULL#
+n = rowSums(X)  # n is slightly different than ESS because of rounding errors#
+x=X#
+#------------------------------------------------------------------------------##
+#  Bayes model#
+#------------------------------------------------------------------------------##
+modelFilename = "dep_mod.txt"#
+  cat("#
+model {#
+  # priors for SR portion#
+  lnalpha ~ dunif(0, 3) #
+  #beta ~ dunif(0,10)#
+  beta ~ dnorm(bpmu,bptau)#
+  beta.prior ~ dnorm(bpmu,bptau) #for ploting and checking#
+  tau.R ~ dgamma(0.01,0.01)  # white noise process error      #
+  phi ~ dunif(-0.99, 0.99)   # autocorrelation coefficient                                              #
+  log.resid.0 ~ dnorm(0, tau.red)  # starting residual for AR1 process#
+  # Ricker SR with AR1 process on log recruitment residuals for years with brood year spawners#
+  for (y in (A+a.min):nRyrs) {#
+    log.R[y] ~ dnorm(log.R.mean.2[y], tau.R)  # true state R is lognormally distributed around the prediction given by SR with AR1#
+    R[y] <- exp(log.R[y])#
+    log.R.mean.1[y] <- lnalpha + log(S[y-a.max]) - beta * S[y-a.max]#
+    log.resid.a[y] <- log.R[y] - log.R.mean.1[y]#
+  }             #
+  log.R.mean.2[A+a.min] <- log.R.mean.1[A+a.min] + phi * log.resid.0#
+  for (y in (A+a.min+1):nRyrs) {#
+    log.R.mean.2[y] <- log.R.mean.1[y] + phi * log.resid.a[y-1]#
+  }#
+  #derived quantities#
+  tau.red <- tau.R * (1 - phi * phi)#
+  sigma.red <- 1 / sqrt(tau.red)#
+  sigma.R <- 1 / sqrt(tau.R)#
+  alpha <- exp(lnalpha)#
+  log.resid <- log.resid.a[(A+a.min):nRyrs]#
+  # First `a.max` years of recruits, for which there is no spawner link#
+  mean.log.R0 ~ dnorm(0, 1E-4) #
+  mean.R0 <- exp(mean.log.R0)#
+  tau.R0 ~ dgamma(0.1,0.1)#
+  sigma.R0 <- 1/sqrt(tau.R0)#
+  for (y in 1:a.max) {#
+    log.R[y] ~ dnorm(mean.log.R0, tau.R0)   #
+    R[y] <- exp(log.R[y])#
+  }#
+  # biological reference points: derived quantities#
+  lnalpha.c <- lnalpha + (sigma.R * sigma.R)/2/(1-phi * phi)#
+  S.max <- 1/beta#
+  S.eq <- lnalpha.c * S.max#
+  S.msy <- S.eq * (0.5 - 0.07 * lnalpha.c)#
+  U.msy <- lnalpha.c * (0.5 - 0.07 * lnalpha.c)#
+  # Maturity schedule: here we use a common maturation schedule to draw the brood year specific schedules;#
+  prob[1] ~ dbeta(1,1)#
+  prob[2] ~ dbeta(1,1)#
+  prob[3] ~ dbeta(1,1)#
+  pi[1]<- prob[1]#
+  pi[2] <- prob[2] * (1 - pi[1])#
+  pi[3] <- prob[3] * (1 - pi[1] - pi[2])#
+  pi[4] <- 1 - pi[1] - pi[2] - pi[3]#
+  D.scale ~ dunif(.045,1)#
+  D.sum <- 1 / (D.scale * D.scale)#
+  for (a in 1:A) {#
+    gamma[a] <- D.sum * pi[a]#
+    for (y in 1:(Y+A-1)) {                                                    #
+      g[y,a] ~ dgamma(gamma[a],1.0)#
+      p[y,a] <- g[y,a]/sum(g[y,])#
+    }#
+  }#
+  # Calculate the numbers at age matrix as brood year recruits at age*proportion that matured that year#
+  for (t in 1:Y) {#
+    for(a in 1:A){#
+      N.ta[t,a] <- R[t+A-a] * p[t+A-a,a]#
+    }#
+  }#
+  ## OBSERVATION SUBMODEL ###
+  # multinomial scale sampling#
+  for (t in 1:Y) {#
+    for (a in 1:A) {#
+      q[t,a] <- N.ta[t,a]/N[t]#
+    }#
+    x[t,1:A] ~ dmulti(q[t,1:A], n[t])#
+  }#
+  for (t in 1:Y) {#
+    # get observation tau's from assumed CV's#
+    log.sigma.C[t] <- sqrt(log((C.cv[t]^2) + 1))#
+    log.tau.C[t] <- 1/log.sigma.C[t]^2#
+    log.sigma.S[t] <- sqrt(log((S.cv[t]^2) + 1))#
+    log.tau.S[t] <- 1/log.sigma.S[t]^2#
+    # catch model#
+    U[t] ~ dunif(0.01, 0.99)#
+    N[t] <- sum(N.ta[t,1:A])#
+    S[t] <- N[t] * (1 - U[t])#
+    C[t] <- N[t] * U[t]#
+    log.C[t] <- log(C[t])#
+    C.obs[t] ~ dlnorm(log.C[t], log.tau.C[t])#
+    # escapement model#
+    log.S[t] <- log(S[t])#
+    S.obs[t] ~ dlnorm(log.S[t], log.tau.S[t])#
+  }#
+}#
+", fill=TRUE, file=modelFilename)#
+#file.show(modelFilename)#
+#------------------------------------------------------------------------------##
+#  Jags inputs#
+#------------------------------------------------------------------------------##
+	jags.data = list('Y','a.min','a.max','A','nRyrs','S.cv','S.obs','C.cv','C.obs',#
+	               'x','n','bpmu','bptau')#
+	jags.parms = c("R", "N", "S", "U", "alpha", "beta", "lnalpha", "phi", "C", "log.resid",#
+	               "log.resid.0","sigma.R", "lnalpha.c", "mean.log.R0", "pi", "q", #
+	               "mean.R0", "sigma.R0","S.msy", "S.max", "S.eq", "U.msy", "gamma", #
+	               "D.sum", "p","log.S","beta.prior")#
+#------------------------------------------------------------------------------##
+#   Fit Model#
+#------------------------------------------------------------------------------##
+ptm = proc.time()#
+	jagsfit.p <- jags.parallel(data=jags.data,  parameters.to.save=jags.parms,n.thin=15,#
+	              n.iter=300000, model.file=modelFilename,n.burnin = 50000,n.chains=6)#
+endtime = proc.time()-ptm#
+endtime[3]/60#
+post = as.mcmc(jagsfit.p)#
+mypost = as.matrix(post, chain=F)#
+#
+write.csv(mypost,"outputs/Atnarko_posteriors.sensitivity.July32018.csv")
+#potential scale reduction factor#
+#
+gelman.diag(post, multivariate = F)#
+R = post.summ(post, "R[")#
+S = post.summ(post, "S[")#
+N = post.summ(post, "N[")#
+U = post.summ(post, "U[")#
+resid = post.summ(post, "log.resid[")#
+PP = post.summ(post, "pi[")#
+alpha = post.summ(post, "alpha")#
+beta = post.summ(post, "beta")#
+phi = post.summ(post, "phi")#
+sigma = post.summ(post, "sigma.R")#
+S.msy = post.summ(post, "S.msy")#
+S.eq = post.summ(post, "S.eq")#
+S.max = post.summ(post, "S.max")#
+U.msy = post.summ(post, "U.msy")#
+round(rbind(alpha, beta, sigma, phi, S.msy, S.eq, S.max, U.msy), 2)#
+mean(mypost[,'beta'])
+#------------------------------------------------------------------------------##
+#   Format data#
+#------------------------------------------------------------------------------##
+Y = nrow(age)             # number of calendar years observed#
+a.min = 3                 # minimum age class in data set#
+a.max = 6                 # maximum age class in data set#
+A = a.max - a.min + 1     # number of age classes#
+nRyrs = Y + A - 1         # number of recruitment years (see model code for details)#
+years = age[,"year"]#
+# escapement: assume a 20% observation CV if directly observed, 40% otherwise#
+S.cv = ifelse(esc[,3] == 1, 0.5, 0.40)#
+S.obs = esc[,2]#
+# harvest: assume a 15% observation CV for years when catch was high and dominated by commercial fishery, 30% in years since#
+C.cv = ifelse(harv[,3] == 1, 0.40, 0.40)#
+C.obs = harv[,2]#
+# age composition: assume a ESS of 100 if directly observed, 25 otherwise#
+ESS = ifelse(age$GoodData == 1, 125, 25)#
+X = age[,substr(names(age), 1, 1) == "X"]#
+X = t(apply(X, 1, function(x) x/sum(x)))#
+X = round(apply(X, 2, function(x) x * ESS))#
+colnames(X) = NULL#
+n = rowSums(X)  # n is slightly different than ESS because of rounding errors#
+x=X#
+#------------------------------------------------------------------------------##
+#  Bayes model#
+#------------------------------------------------------------------------------##
+modelFilename = "dep_mod.txt"#
+  cat("#
+model {#
+  # priors for SR portion#
+  lnalpha ~ dunif(0, 3) #
+  #beta ~ dunif(0,10)#
+  beta ~ dnorm(bpmu,bptau)#
+  beta.prior ~ dnorm(bpmu,bptau) #for ploting and checking#
+  tau.R ~ dgamma(0.01,0.01)  # white noise process error      #
+  phi ~ dunif(-0.99, 0.99)   # autocorrelation coefficient                                              #
+  log.resid.0 ~ dnorm(0, tau.red)  # starting residual for AR1 process#
+  # Ricker SR with AR1 process on log recruitment residuals for years with brood year spawners#
+  for (y in (A+a.min):nRyrs) {#
+    log.R[y] ~ dnorm(log.R.mean.2[y], tau.R)  # true state R is lognormally distributed around the prediction given by SR with AR1#
+    R[y] <- exp(log.R[y])#
+    log.R.mean.1[y] <- lnalpha + log(S[y-a.max]) - beta * S[y-a.max]#
+    log.resid.a[y] <- log.R[y] - log.R.mean.1[y]#
+  }             #
+  log.R.mean.2[A+a.min] <- log.R.mean.1[A+a.min] + phi * log.resid.0#
+  for (y in (A+a.min+1):nRyrs) {#
+    log.R.mean.2[y] <- log.R.mean.1[y] + phi * log.resid.a[y-1]#
+  }#
+  #derived quantities#
+  tau.red <- tau.R * (1 - phi * phi)#
+  sigma.red <- 1 / sqrt(tau.red)#
+  sigma.R <- 1 / sqrt(tau.R)#
+  alpha <- exp(lnalpha)#
+  log.resid <- log.resid.a[(A+a.min):nRyrs]#
+  # First `a.max` years of recruits, for which there is no spawner link#
+  mean.log.R0 ~ dnorm(0, 1E-4) #
+  mean.R0 <- exp(mean.log.R0)#
+  tau.R0 ~ dgamma(0.1,0.1)#
+  sigma.R0 <- 1/sqrt(tau.R0)#
+  for (y in 1:a.max) {#
+    log.R[y] ~ dnorm(mean.log.R0, tau.R0)   #
+    R[y] <- exp(log.R[y])#
+  }#
+  # biological reference points: derived quantities#
+  lnalpha.c <- lnalpha + (sigma.R * sigma.R)/2/(1-phi * phi)#
+  S.max <- 1/beta#
+  S.eq <- lnalpha.c * S.max#
+  S.msy <- S.eq * (0.5 - 0.07 * lnalpha.c)#
+  U.msy <- lnalpha.c * (0.5 - 0.07 * lnalpha.c)#
+  # Maturity schedule: here we use a common maturation schedule to draw the brood year specific schedules;#
+  prob[1] ~ dbeta(1,1)#
+  prob[2] ~ dbeta(1,1)#
+  prob[3] ~ dbeta(1,1)#
+  pi[1]<- prob[1]#
+  pi[2] <- prob[2] * (1 - pi[1])#
+  pi[3] <- prob[3] * (1 - pi[1] - pi[2])#
+  pi[4] <- 1 - pi[1] - pi[2] - pi[3]#
+  D.scale ~ dunif(.045,1)#
+  D.sum <- 1 / (D.scale * D.scale)#
+  for (a in 1:A) {#
+    gamma[a] <- D.sum * pi[a]#
+    for (y in 1:(Y+A-1)) {                                                    #
+      g[y,a] ~ dgamma(gamma[a],1.0)#
+      p[y,a] <- g[y,a]/sum(g[y,])#
+    }#
+  }#
+  # Calculate the numbers at age matrix as brood year recruits at age*proportion that matured that year#
+  for (t in 1:Y) {#
+    for(a in 1:A){#
+      N.ta[t,a] <- R[t+A-a] * p[t+A-a,a]#
+    }#
+  }#
+  ## OBSERVATION SUBMODEL ###
+  # multinomial scale sampling#
+  for (t in 1:Y) {#
+    for (a in 1:A) {#
+      q[t,a] <- N.ta[t,a]/N[t]#
+    }#
+    x[t,1:A] ~ dmulti(q[t,1:A], n[t])#
+  }#
+  for (t in 1:Y) {#
+    # get observation tau's from assumed CV's#
+    log.sigma.C[t] <- sqrt(log((C.cv[t]^2) + 1))#
+    log.tau.C[t] <- 1/log.sigma.C[t]^2#
+    log.sigma.S[t] <- sqrt(log((S.cv[t]^2) + 1))#
+    log.tau.S[t] <- 1/log.sigma.S[t]^2#
+    # catch model#
+    U[t] ~ dunif(0.01, 0.99)#
+    N[t] <- sum(N.ta[t,1:A])#
+    S[t] <- N[t] * (1 - U[t])#
+    C[t] <- N[t] * U[t]#
+    log.C[t] <- log(C[t])#
+    C.obs[t] ~ dlnorm(log.C[t], log.tau.C[t])#
+    # escapement model#
+    log.S[t] <- log(S[t])#
+    S.obs[t] ~ dlnorm(log.S[t], log.tau.S[t])#
+  }#
+}#
+", fill=TRUE, file=modelFilename)#
+#file.show(modelFilename)#
+#------------------------------------------------------------------------------##
+#  Jags inputs#
+#------------------------------------------------------------------------------##
+	jags.data = list('Y','a.min','a.max','A','nRyrs','S.cv','S.obs','C.cv','C.obs',#
+	               'x','n','bpmu','bptau')#
+	jags.parms = c("R", "N", "S", "U", "alpha", "beta", "lnalpha", "phi", "C", "log.resid",#
+	               "log.resid.0","sigma.R", "lnalpha.c", "mean.log.R0", "pi", "q", #
+	               "mean.R0", "sigma.R0","S.msy", "S.max", "S.eq", "U.msy", "gamma", #
+	               "D.sum", "p","log.S","beta.prior")#
+#------------------------------------------------------------------------------##
+#   Fit Model#
+#------------------------------------------------------------------------------##
+ptm = proc.time()#
+	jagsfit.p <- jags.parallel(data=jags.data,  parameters.to.save=jags.parms,n.thin=15,#
+	              n.iter=300000, model.file=modelFilename,n.burnin = 50000,n.chains=6)#
+endtime = proc.time()-ptm#
+endtime[3]/60#
+post = as.mcmc(jagsfit.p)#
+mypost = as.matrix(post, chain=F)#
+#
+write.csv(mypost,"outputs/Atnarko_posteriors.sensitivity.July32018.csv")
+R = post.summ(post, "R[")#
+S = post.summ(post, "S[")#
+N = post.summ(post, "N[")#
+U = post.summ(post, "U[")#
+resid = post.summ(post, "log.resid[")#
+PP = post.summ(post, "pi[")#
+alpha = post.summ(post, "alpha")#
+beta = post.summ(post, "beta")#
+phi = post.summ(post, "phi")#
+sigma = post.summ(post, "sigma.R")#
+S.msy = post.summ(post, "S.msy")#
+S.eq = post.summ(post, "S.eq")#
+S.max = post.summ(post, "S.max")#
+U.msy = post.summ(post, "U.msy")#
+round(rbind(alpha, beta, sigma, phi, S.msy, S.eq, S.max, U.msy), 2)#
+mean(mypost[,'beta'])
+posteriors = mypost
+## Functions for analysis#
+#
+#------------------------------------------------------------------------------##
+# Posterior summary function#
+#------------------------------------------------------------------------------##
+post.summ = function(post.samp, var) {#
+  post.samp = as.matrix(post.samp)#
+  # if parameter is indexed#
+  if(substr(var, nchar(var), nchar(var)) == "[") {#
+    post = post.samp[,substr(colnames(post.samp), 1, nchar(var)) == var]#
+    summ = apply(post, 2, function(x) c(mean = mean(x), sd = sd(x), quantile(x, c(0.5, 0.025, 0.975))))#
+    return(summ)#
+  }#
+  # if parameter is not indexed#
+  if(substr(var, nchar(var), nchar(var)) != "[") {#
+    post = post.samp[,substr(colnames(post.samp), 1, nchar(var)) == var]#
+    summ = c(mean = mean(post), sd = sd(post), quantile(post, c(0.5, 0.025, 0.975)))#
+    return(summ)#
+  }#
+}#
+#
+#------------------------------------------------------------------------------##
+# Multi-stock simulation function#
+#------------------------------------------------------------------------------##
+# ny <- the number of years#
+# Ro <- the sub-stock recruiment at time zero#
+# phi <- the expected correlation through time#
+# mat <- stock-specific maturation schedules#
+# alpha <- sub-stock productivity (not in log space)#
+# beta <- sub-stock density depedence #
+# sigma.R <- recruitment variation#
+# U <- finite annual exploitation rate#
+# pm.yr <- year of simulation that pms start to be calculated over#
+# Rec <- estimated recruitments from last years of empirical data #
+# Spw <- estimated spawers from last years of empirical data#
+# lst.resid <- estimated recruitment deviation from last year of empirical data#
+#
+process = function(ny,Ro,phi,mat,U,alpha,beta,sigma.R,Rec,Spw,lst.resid){#
+	ns = length(Ro) #number of sub-stocks#
+	m.alpha <- alpha#
+	m.beta <- beta#
+	epi = rnorm(ny, sd= sigma.R)#
+#
+	#Build time series of Spawners (S), abundance of returning spawners pre-harvest#
+	# (N), and the component of the residual that is correlated throught time (v)#
+	R = t(matrix(0,ns,ny))#
+	S = R * (1-0)#
+	v = R; v[,]=0#
+	#R[1:7,]=t(replicate(7,Ro,simplify=T))*exp(epi[1:7,])#
+	R[1:3,]=Rec#
+	N = array(0,dim=c(ny,4,ns))#
+	Ntot = R; Ntot[,]=0#
+	H = Ntot; S = Ntot#
+	S[4:7,] = Spw#
+	predR = Ntot#
+	# populate first few years with realized states#
+	R[4,] = exp(log(alpha[]*S[4,]*exp(-beta[]*S[4,])) + phi* lst.resid) * exp(epi[4])#
+	v[4,] = log(R[4,])-log(alpha[]*S[4,]*exp(-beta[]*S[4,]))#
+	for(i in 5:7){#
+		R[i,] = exp(log(alpha[]*S[i,]*exp(-beta[]*S[i,])) + phi* v[i-1,]) * exp(epi[i])#
+		v[i,] = log(R[i,])-log(alpha[]*S[i,]*exp(-beta[]*S[i,]))		#
+	}#
+#
+	N[4:7,1,]=R[4:7-(3),] * mat[1]#
+	N[5:7,2,]=R[5:7-(4),] * mat[2]#
+	N[6:7,3,]=R[6:7-(5),] * mat[3]#
+	N[7,4,]=R[7-(6),] * mat[4]#
+	# Loop through years of simulation	  #
+	for(i in (7+1):ny){ #
+		N[i,1,1] = R[i-(4),1] * mat[1]#
+		N[i,2,1] = R[i-(5),1] * mat[2]#
+		N[i,3,1] = R[i-(6),1] * mat[3]#
+		N[i,4,1] = R[i-(7),1] * mat[4]#
+		Ntot[i,1] = sum(N[i,,1])#
+#
+		# apply harvest #
+		H[i,1] =  U*Ntot[i,1]#
+		S_exp = Ntot[i,1]-H[i,1] ; S_exp[S_exp<0] = 0#
+		S[i,1] = S_exp#
+		# predict recruitment#
+		R[i,1] = alpha[]*S[i,1]*exp(-beta[]*S[i,1]+phi*v[i-1,1]+epi[i])#
+		predR[i,] = alpha[]*S[i,1]*exp(-beta[]*S[i,1])#
+		v[i,1] = log(R[i,1])-log(predR[i,1])#
+		v[v[,1]=='NaN'] <- 0#
+	    }#
+	#Output#
+	S[S[,]=='NaN'] <- 0#
+	Ntot[Ntot[,]=='NaN'] <- 0#
+	p_rg <-ifelse(median(S[(ny-10):ny,])>15000,1,0)#
+	p_lrp <-ifelse(median(S[(ny-10):ny,])>4000,1,0)#
+	list(S=S[,],N=Ntot[,],survival=as.numeric(v),P=c(p_rg,p_lrp))#
+	}#
+#
+#------------------------------------------------------------------------------##
+# Function to sample from posteriors for forward simulations#
+#------------------------------------------------------------------------------#	#
+#
+process.iteration = function(samp) {#
+  # 1.) extract names#
+  nms = names(samp)#
+  # 2.) extract elements according to the names and put them into the appropriate data structure#
+  # parameters#
+  alpha = unname(samp[substr(nms, 1, 5) == "alpha"])#
+  beta = unname(samp[substr(nms, 1, 5) == "beta"])#
+  last_resid = unname(samp[substr(nms, 1, 13) == "log.resid.40."])#
+  phi = unname(samp["phi"])#
+  sigma_R = unname(samp["sigma.R"])#
+  mat.sch = c(as.numeric(samp["pi.1."]), as.numeric(samp["pi.2."]), as.numeric(samp["pi.3."]), as.numeric(samp["pi.4."]))#
+  # states#
+  S = c(as.numeric(samp["S.40."]), as.numeric(samp["S.41."]), as.numeric(samp["S.42."]), as.numeric(samp["S.43."]))#
+  R = c(as.numeric(samp["R.44."]), as.numeric(samp["R.45."]), as.numeric(samp["R.46."]))#
+  # 3.) create output list#
+  output = list(#
+    alpha = as.numeric(alpha),#
+    beta = as.numeric(beta),#
+    phi = as.numeric(phi),#
+    last_resid = as.numeric(last_resid),#
+    sigma_R = as.numeric(sigma_R),#
+    mat.sch = mat.sch,#
+    S = S,#
+    R = R#
+    )#
+#
+  # 4.) return output#
+  return(output)#
+#
+}
+# set number of simulations and create array to store results #
+num.sims = 5000#
+ny = 27 #(7 years plus length of forward sim)#
+#
+harvest_rate <- seq(0,0.4,length.out=21)#
+outcomes.1 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper75 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower25 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper90 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower10 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.2 <- array(NA,dim=c(ny,3, num.sims))#
+outcomes.3 <- array(NA,dim=c(1,2, num.sims))#
+outcomes.4 <- array(NA,dim=c(1,2, length(harvest_rate)))#
+#
+# set conditions for simulation function#
+alpha <- process.iteration(posteriors[1,])$alpha#
+beta <- process.iteration(posteriors[1,])$beta#
+Ro <- log(alpha)/beta; sum(Ro)#
+#
+ptm <- proc.time()#
+#
+# run simulations!#
+for (w in 1:length(harvest_rate)){#
+	for (l in 1: num.sims){#
+		draw <- sample(10000,1)#
+		alpha <- process.iteration(posteriors[draw,])$alpha#
+		beta <- process.iteration(posteriors[draw,])$beta#
+		sigma.R <- process.iteration(posteriors[draw,])$sigma_R#
+		mat <- process.iteration(posteriors[draw,])$mat.sch#
+		Rec <- process.iteration(posteriors[draw,])$R#
+		Spw <- process.iteration(posteriors[draw,])$S#
+		lst.resid <- process.iteration(posteriors[draw,])$last_resid#
+		phi <- process.iteration(posteriors[draw,])$phi#
+		out <- process(ny,Ro,phi,mat,harvest_rate[w],alpha,beta,sigma.R,Rec,Spw,lst.resid)#
+		outcomes.2[,1,l] <- out$S#
+		outcomes.2[,2,l] <- out$N#
+		outcomes.2[,3,l] <- out$survival#
+		outcomes.3[,1,l] <- out$P[1]#
+		outcomes.3[,2,l] <- out$P[2]#
+	}	#
+outcomes.1[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.5),na.rm=T)#
+outcomes.1.lower[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.10),na.rm=T)#
+outcomes.1.upper[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.9),na.rm=T)#
+outcomes.1.lower25[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.20),na.rm=T)#
+outcomes.1.upper75[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.80),na.rm=T)#
+outcomes.1.lower10[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.40),na.rm=T)#
+outcomes.1.upper90[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.6),na.rm=T)#
+outcomes.4[,,w] <- apply(outcomes.3,c(1,2),mean,na.rm=T)#
+#
+}#
+#
+(proc.time() - ptm)/60
+alpha
+# run simulations!#
+for (w in 1:length(harvest_rate)){#
+	for (l in 1: num.sims){#
+		draw <- sample(10000,1)#
+		alpha <- process.iteration(posteriors[draw,])$alpha#
+		beta <- process.iteration(posteriors[draw,])$beta#
+		sigma.R <- process.iteration(posteriors[draw,])$sigma_R#
+		mat <- process.iteration(posteriors[draw,])$mat.sch#
+		Rec <- process.iteration(posteriors[draw,])$R#
+		Spw <- process.iteration(posteriors[draw,])$S#
+		lst.resid <- process.iteration(posteriors[draw,])$last_resid#
+		phi <- process.iteration(posteriors[draw,])$phi#
+		out <- process(ny,Ro,phi,mat,harvest_rate[w],alpha,beta,sigma.R,Rec,Spw,lst.resid)#
+		outcomes.2[,1,l] <- out$S#
+		outcomes.2[,2,l] <- out$N#
+		outcomes.2[,3,l] <- out$survival#
+		outcomes.3[,1,l] <- out$P[1]#
+		outcomes.3[,2,l] <- out$P[2]#
+	}	#
+outcomes.1[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.5),na.rm=T)#
+outcomes.1.lower[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.10),na.rm=T)#
+outcomes.1.upper[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.9),na.rm=T)#
+outcomes.1.lower25[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.20),na.rm=T)#
+outcomes.1.upper75[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.80),na.rm=T)#
+outcomes.1.lower10[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.40),na.rm=T)#
+outcomes.1.upper90[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.6),na.rm=T)#
+outcomes.4[,,w] <- apply(outcomes.3,c(1,2),mean,na.rm=T)#
+#
+}#
+#
+(proc.time() - ptm)/60
+S <- S[,c(1,12,23,34,39:43,2:11,13:22,24:33,35:38)]#
+R <- R[,c(1,12,23,34,42,43,44,45,46,2:11,13:22,24:33,35:41)]#
+U <- U[,c(1,12,23,34,39:43,2:11,13:22,24:33,35:38)]#
+N <- N[,c(1,12,23,34,39:43,2:11,13:22,24:33,35:38)]#
+resid <- resid[,c(1,12,23,34,36:39,2:11,13:22,24:33,35)]
+# set number of simulations and create array to store results #
+num.sims = 5000#
+ny = 27 #(7 years plus length of forward sim)#
+#
+harvest_rate <- seq(0,0.4,length.out=21)#
+outcomes.1 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper75 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower25 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper90 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower10 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.2 <- array(NA,dim=c(ny,3, num.sims))#
+outcomes.3 <- array(NA,dim=c(1,2, num.sims))#
+outcomes.4 <- array(NA,dim=c(1,2, length(harvest_rate)))#
+#
+# set conditions for simulation function#
+alpha <- process.iteration(posteriors[1,])$alpha#
+beta <- process.iteration(posteriors[1,])$beta#
+Ro <- log(alpha)/beta; sum(Ro)#
+#
+ptm <- proc.time()#
+#
+# run simulations!#
+for (w in 1:length(harvest_rate)){#
+	for (l in 1: num.sims){#
+		draw <- sample(10000,1)#
+		alpha <- process.iteration(posteriors[draw,])$alpha#
+		beta <- process.iteration(posteriors[draw,])$beta#
+		sigma.R <- process.iteration(posteriors[draw,])$sigma_R#
+		mat <- process.iteration(posteriors[draw,])$mat.sch#
+		Rec <- process.iteration(posteriors[draw,])$R#
+		Spw <- process.iteration(posteriors[draw,])$S#
+		lst.resid <- process.iteration(posteriors[draw,])$last_resid#
+		phi <- process.iteration(posteriors[draw,])$phi#
+		out <- process(ny,Ro,phi,mat,harvest_rate[w],alpha,beta,sigma.R,Rec,Spw,lst.resid)#
+		outcomes.2[,1,l] <- out$S#
+		outcomes.2[,2,l] <- out$N#
+		outcomes.2[,3,l] <- out$survival#
+		outcomes.3[,1,l] <- out$P[1]#
+		outcomes.3[,2,l] <- out$P[2]#
+	}	#
+outcomes.1[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.5),na.rm=T)#
+outcomes.1.lower[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.10),na.rm=T)#
+outcomes.1.upper[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.9),na.rm=T)#
+outcomes.1.lower25[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.20),na.rm=T)#
+outcomes.1.upper75[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.80),na.rm=T)#
+outcomes.1.lower10[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.40),na.rm=T)#
+outcomes.1.upper90[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.6),na.rm=T)#
+outcomes.4[,,w] <- apply(outcomes.3,c(1,2),mean,na.rm=T)#
+#
+}#
+#
+(proc.time() - ptm)/60
+alpha
+beta
+sigma.R
+mat
+process.iteration(posteriors[draw,])$mat.sch
+process.iteration(posteriors[draw,])
+posteriors[draw,]
+process.iteration(posteriors[draw,])
+samp = posteriors[draw,]
+nms = names(samp)
+nms
+posteriors = read.csv("outputs/Atnarko_posteriors.sensitivity.July32018.csv")
+# set number of simulations and create array to store results #
+num.sims = 5000#
+ny = 27 #(7 years plus length of forward sim)#
+#
+harvest_rate <- seq(0,0.4,length.out=21)#
+outcomes.1 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper75 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower25 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper90 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower10 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.2 <- array(NA,dim=c(ny,3, num.sims))#
+outcomes.3 <- array(NA,dim=c(1,2, num.sims))#
+outcomes.4 <- array(NA,dim=c(1,2, length(harvest_rate)))#
+#
+# set conditions for simulation function#
+alpha <- process.iteration(posteriors[1,])$alpha#
+beta <- process.iteration(posteriors[1,])$beta#
+Ro <- log(alpha)/beta; sum(Ro)#
+#
+ptm <- proc.time()#
+#
+# run simulations!#
+for (w in 1:length(harvest_rate)){#
+	for (l in 1: num.sims){#
+		draw <- sample(10000,1)#
+		alpha <- process.iteration(posteriors[draw,])$alpha#
+		beta <- process.iteration(posteriors[draw,])$beta#
+		sigma.R <- process.iteration(posteriors[draw,])$sigma_R#
+		mat <- process.iteration(posteriors[draw,])$mat.sch#
+		Rec <- process.iteration(posteriors[draw,])$R#
+		Spw <- process.iteration(posteriors[draw,])$S#
+		lst.resid <- process.iteration(posteriors[draw,])$last_resid#
+		phi <- process.iteration(posteriors[draw,])$phi#
+		out <- process(ny,Ro,phi,mat,harvest_rate[w],alpha,beta,sigma.R,Rec,Spw,lst.resid)#
+		outcomes.2[,1,l] <- out$S#
+		outcomes.2[,2,l] <- out$N#
+		outcomes.2[,3,l] <- out$survival#
+		outcomes.3[,1,l] <- out$P[1]#
+		outcomes.3[,2,l] <- out$P[2]#
+	}	#
+outcomes.1[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.5),na.rm=T)#
+outcomes.1.lower[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.10),na.rm=T)#
+outcomes.1.upper[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.9),na.rm=T)#
+outcomes.1.lower25[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.20),na.rm=T)#
+outcomes.1.upper75[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.80),na.rm=T)#
+outcomes.1.lower10[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.40),na.rm=T)#
+outcomes.1.upper90[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.6),na.rm=T)#
+outcomes.4[,,w] <- apply(outcomes.3,c(1,2),mean,na.rm=T)#
+#
+}#
+#
+(proc.time() - ptm)/60
+# a little housekeeping#
+jet.colors <- colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan","#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))#
+colorss <- jet.colors(21)#
+legend_image <- as.raster(matrix(rev(jet.colors(21)),ncol=1))#
+#
+years <- seq(2005,2017)#
+#
+xx <- apply(posteriors,2,quantile,probs=c(0.025,0.5,0.975))#
+nms = names(posteriors)#
+yy <- posteriors[substr(nms, 1, 2) == "S."]#
+spw <- yy[,4:46]#
+S <- spw[1,c(1,12,23,34,39:43,2:11,13:22,24:33,35:38)]#
+S.summ <- apply(S,2,quantile,probs=c(0.025,0.5,0.975))#
+#
+S.summ[2,43] <- outcomes.1[7,1,1]#
+#
+# generate plot#
+jpeg("figures/Figure_4.sensitivity.jpeg",width=8, height=6,units="in",res=400,bg = "transparent")#
+#dev.new(width=8, height=6)#
+par(new=T)#
+#
+split.screen(rbind(#
+c(0,0.5,0.5,1), #1#
+c(0.5,1,0.5,1), #1#
+c(0,0.5,0,0.5), #2#
+c(0.5,1,0,0.5) #3#
+#
+))#
+#
+screen(1)#
+#
+par(mar=c(0.5,3,1,0.8),oma=c(5,2,0.5,0.5))#
+#
+plot(years,S.summ[2,31:43],type="l",lwd=3,ylim=c(0,100000),xlim=c(2010,2037),yaxt="n",xaxt="n")#
+axis(2,las=2,at=c(0,20000,40000,60000,80000,100000),labels=c("0","20","40","60","80","100"))#
+axis(1,at=c(2005,2015,2025,2035))#
+#
+mtext("Spawners (000s)",2,line=2.9,cex=1)#
+mtext("Year",1,line=2.1,cex=1,adj=1.2)#
+#
+ablineclip(lty=2,col="dark green",x1=2017,x2=2037,y1=15000,h=15000,lwd=2)#
+ablineclip(h=4000,lty=3,col="red",x1=2017,x2=2037,lwd=2)#
+#
+trans_col.1<-rgb(0,0,127,max=255,alpha=45)#
+polygon(c(seq(2017,2037),rev(seq(2017,2037))),c(outcomes.1.lower[7:27,1,1],rev(outcomes.1.upper[7:27,1,1])),col=trans_col.1,border=NA)#
+#
+polygon(c(seq(2017,2037),rev(seq(2017,2037))),c(outcomes.1.lower25[7:27,1,1],rev(outcomes.1.upper75[7:27,1,1])),col=trans_col.1,border=NA)#
+#
+polygon(c(seq(2017,2037),rev(seq(2017,2037))),c(outcomes.1.lower10[7:27,1,1],rev(outcomes.1.upper90[7:27,1,1])),col=trans_col.1,border=NA)#
+#
+points(seq(2017,2037),outcomes.1[7:27,1,1],type="l",col=colorss[1],lwd=3)#
+#
+text(2009,96000,"(a)",pos=4)#
+#
+legend(2009,90000,legend=c("Recovery goal","Limit reference point"),lty=c(2,3),lwd=2,col=c("dark green","red"),text.col=c("dark green","red"),bty="n",cex=0.7)#
+#
+screen(2)#
+#
+par(mar=c(0.5,3,1,0.8),oma=c(5,2,0.5,0.5))#
+#
+plot(years,S.summ[2,31:43],type="l",lwd=3,ylim=c(0,100000),xlim=c(2010,2037),yaxt="n",xaxt="n")#
+#
+axis(2,las=2,at=c(0,20000,40000,60000,80000,100000),labels=c("0","20","40","60","80","100"))#
+axis(1,at=c(2005,2015,2025,2035))#
+ablineclip(lty=2,col="dark green",x1=2017,x2=2037,y1=15000,h=15000,lwd=2)#
+ablineclip(h=4000,lty=3,col="red",x1=2017,x2=2037,lwd=2)#
+#
+trans_col.2<-rgb(127,0,0,max=255,alpha=45)#
+#
+polygon(c(seq(2017,2037),rev(seq(2017,2037))),c(outcomes.1.lower[7:27,1,21],rev(outcomes.1.upper[7:27,1,21])),col=trans_col.2,border=NA)#
+#
+polygon(c(seq(2017,2037),rev(seq(2017,2037))),c(outcomes.1.lower25[7:27,1,21],rev(outcomes.1.upper75[7:27,1,21])),col=trans_col.2,border=NA)#
+#
+polygon(c(seq(2017,2037),rev(seq(2017,2037))),c(outcomes.1.lower10[7:27,1,21],rev(outcomes.1.upper90[7:27,1,21])),col=trans_col.2,border=NA)#
+#
+points(seq(2017,2037),outcomes.1[7:27,1,21],type="l",col=colorss[21],lwd=3)#
+#
+text(2009,96000,"(b)",pos=4)#
+#
+screen(3)#
+#
+par(mar=c(3.5,4.5,1,0.8),oma=c(0.5,0.5,0.5,0.5))#
+#
+b<-barplot(outcomes.4[,2,]*100,yaxt="n",ylab=,xaxt="n",col=colorss,ylim=c(0,115))#
+axis(2,las=2)#
+axis(1,at=c(b[1],b[6],b[11],b[16],b[21]),labels=c("0","10","20","30","40"))#
+mtext("Chance of exceeding",2,line=3.75)#
+mtext("limit reference point (%)",2,line=2.75)#
+mtext("     Harvest rate (%)",1,line=-1,outer=T)#
+text(0.5,110,"(c)")#
+#
+screen(4)#
+par(mar=c(3.5,4.5,1,0.8),oma=c(0.5,0.5,0.5,0.5))#
+#
+b<-barplot(outcomes.4[,1,]*100,yaxt="n",ylab=,xaxt="n",col=colorss,ylim=c(0,115))#
+axis(2,las=2)#
+axis(1,at=c(b[1],b[6],b[11],b[16],b[21]),labels=c("0","10","20","30","40"))#
+mtext("Chance of exceeding",2,line=3.75)#
+mtext("recovery goal (%)",2,line=2.75)#
+text(0.5,110,"(d)")#
+#
+rasterImage(legend_image,16.5,65,19,90)#
+text(18.5,65,"0%",pos=4,cex=0.8)#
+text(18.5,77.5,"20%",pos=4,cex=0.8)#
+text(18.5,89,"40%",pos=4,cex=0.8)#
+text(14.,98,"Harvest rate",pos=4,cex=0.8)#
+#
+dev.off()
+regional_prop <- read.csv("data/yukon_chin_region_prop.csv",header=T)
+age = read.csv("data/AgeCompTab.csv")#
+esc = read.csv("data/EscTab.csv")#
+harv = read.csv("data/HarTab.csv")#
+#------------------------------------------------------------------------------##
+#   Set beta prior for stock (uniform (uninformative) prior can be commented in#
+#	or out in model description (line 57)) #
+#------------------------------------------------------------------------------##
+SMAX <- mean(esc[,2]) # mean escapement over time series#
+#SMAX <- 21300 # lake habitat (photosynthetic rate) based estimate of lake capacity#
+#
+bpmu = 1/SMAX # turn SMAX into beta prior#
+bptau = 1/((3*(1/SMAX))^2)  # set CV on prior#
+#------------------------------------------------------------------------------##
+#   Format data#
+#------------------------------------------------------------------------------##
+Y = nrow(age)             # number of calendar years observed#
+a.min = 3                 # minimum age class in data set#
+a.max = 6                 # maximum age class in data set#
+A = a.max - a.min + 1     # number of age classes#
+nRyrs = Y + A - 1         # number of recruitment years (see model code for details)#
+years = age[,"year"]#
+# escapement: assume a 20% observation CV if directly observed, 40% otherwise#
+S.cv = ifelse(esc[,3] == 1, 0.2, 0.40)#
+S.obs = esc[,2]#
+# harvest: assume a 15% observation CV for years when catch was high and dominated by commercial fishery, 30% in years since#
+C.cv = ifelse(harv[,3] == 1, 0.15, 0.30)#
+C.obs = harv[,2]#
+# age composition: assume a ESS of 100 if directly observed, 25 otherwise#
+ESS = ifelse(age$GoodData == 1, 100, 25)#
+X = age[,substr(names(age), 1, 1) == "X"]#
+X = t(apply(X, 1, function(x) x/sum(x)))#
+X = round(apply(X, 2, function(x) x * ESS))#
+colnames(X) = NULL#
+n = rowSums(X)  # n is slightly different than ESS because of rounding errors#
+x=X
+x
+#------------------------------------------------------------------------------##
+# Run closed loop simulations across a range of harves rates#
+#------------------------------------------------------------------------------##
+#
+#load posterior samples#
+posteriors = read.csv("outputs/Atnarko_posteriors.June292018.csv")#
+#
+# set number of simulations and create array to store results #
+num.sims = 10000#
+ny = 27 #(7 years plus length of forward sim)#
+#
+harvest_rate <- seq(0,0.4,length.out=21)#
+outcomes.1.median <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper10 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower90 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper20 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower80 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper30 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower70 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper40 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower60 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.2 <- array(NA,dim=c(ny,3, num.sims))#
+outcomes.3 <- array(NA,dim=c(1,2, num.sims))#
+outcomes.4 <- array(NA,dim=c(1,2, length(harvest_rate)))#
+#
+# set conditions for simulation function#
+alpha <- process.iteration(posteriors[1,])$alpha#
+beta <- process.iteration(posteriors[1,])$beta#
+Ro <- log(alpha)/beta; sum(Ro)#
+#
+ptm <- proc.time()#
+#
+# run simulations!#
+for (w in 1:length(harvest_rate)){#
+	for (l in 1: num.sims){#
+		draw <- sample(10000,1)#
+		alpha <- process.iteration(posteriors[draw,])$alpha#
+		beta <- process.iteration(posteriors[draw,])$beta#
+		sigma.R <- process.iteration(posteriors[draw,])$sigma_R#
+		mat <- process.iteration(posteriors[draw,])$mat.sch#
+		Rec <- process.iteration(posteriors[draw,])$R#
+		Spw <- process.iteration(posteriors[draw,])$S#
+		lst.resid <- process.iteration(posteriors[draw,])$last_resid#
+		phi <- process.iteration(posteriors[draw,])$phi#
+		out <- process(ny,Ro,phi,mat,harvest_rate[w],alpha,beta,sigma.R,Rec,Spw,lst.resid)#
+		outcomes.2[,1,l] <- out$S#
+		outcomes.2[,2,l] <- out$N#
+		outcomes.2[,3,l] <- out$survival#
+		outcomes.3[,1,l] <- out$P[1]#
+		outcomes.3[,2,l] <- out$P[2]#
+	}	#
+outcomes.1.median[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.5),na.rm=T)#
+outcomes.1.lower10[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.1),na.rm=T)#
+outcomes.1.upper90[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.9),na.rm=T)#
+outcomes.1.lower20[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.2),na.rm=T)#
+outcomes.1.upper80[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.8),na.rm=T)#
+outcomes.1.lower30[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.3),na.rm=T)#
+outcomes.1.upper70[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.7),na.rm=T)#
+outcomes.1.lower40[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.4),na.rm=T)#
+outcomes.1.upper60[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.6),na.rm=T)#
+outcomes.4[,,w] <- apply(outcomes.3,c(1,2),mean,na.rm=T)#
+#
+}#
+#
+(proc.time() - ptm)/60
+rm(list = ls())   #
+#
+source("load.R")
+source("forward_sims.R")
+#load posterior samples#
+posteriors = read.csv("outputs/Atnarko_posteriors.June292018.csv")#
+#
+# set number of simulations and create array to store results #
+num.sims = 10000#
+ny = 27 #(7 years plus length of forward sim)#
+#
+harvest_rate <- seq(0,0.4,length.out=21)#
+outcomes.1.median <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper10 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower90 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper20 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower80 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper30 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower70 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.upper40 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.1.lower60 <- array(NA,dim=c(ny,3, length(harvest_rate)))#
+outcomes.2 <- array(NA,dim=c(ny,3, num.sims))#
+outcomes.3 <- array(NA,dim=c(1,2, num.sims))#
+outcomes.4 <- array(NA,dim=c(1,2, length(harvest_rate)))#
+#
+# set conditions for simulation function#
+alpha <- process.iteration(posteriors[1,])$alpha#
+beta <- process.iteration(posteriors[1,])$beta#
+Ro <- log(alpha)/beta; sum(Ro)#
+#
+ptm <- proc.time()#
+#
+# run simulations!#
+for (w in 1:length(harvest_rate)){#
+	for (l in 1: num.sims){#
+		draw <- sample(10000,1)#
+		alpha <- process.iteration(posteriors[draw,])$alpha#
+		beta <- process.iteration(posteriors[draw,])$beta#
+		sigma.R <- process.iteration(posteriors[draw,])$sigma_R#
+		mat <- process.iteration(posteriors[draw,])$mat.sch#
+		Rec <- process.iteration(posteriors[draw,])$R#
+		Spw <- process.iteration(posteriors[draw,])$S#
+		lst.resid <- process.iteration(posteriors[draw,])$last_resid#
+		phi <- process.iteration(posteriors[draw,])$phi#
+		out <- process(ny,Ro,phi,mat,harvest_rate[w],alpha,beta,sigma.R,Rec,Spw,lst.resid)#
+		outcomes.2[,1,l] <- out$S#
+		outcomes.2[,2,l] <- out$N#
+		outcomes.2[,3,l] <- out$survival#
+		outcomes.3[,1,l] <- out$P[1]#
+		outcomes.3[,2,l] <- out$P[2]#
+	}	#
+outcomes.1.median[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.5),na.rm=T)#
+outcomes.1.lower10[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.1),na.rm=T)#
+outcomes.1.upper90[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.9),na.rm=T)#
+outcomes.1.lower20[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.2),na.rm=T)#
+outcomes.1.upper80[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.8),na.rm=T)#
+outcomes.1.lower30[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.3),na.rm=T)#
+outcomes.1.upper70[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.7),na.rm=T)#
+outcomes.1.lower40[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.4),na.rm=T)#
+outcomes.1.upper60[,,w] <- apply(outcomes.2,c(1,2),quantile,probs=c(0.6),na.rm=T)#
+outcomes.4[,,w] <- apply(outcomes.3,c(1,2),mean,na.rm=T)#
+#
+}#
+#
+(proc.time() - ptm)/60
+age = read.csv("data/AgeCompTab.csv")#
+esc = read.csv("data/EscTab.csv")#
+harv = read.csv("data/HarTab.csv")#
+#------------------------------------------------------------------------------##
+#   Set beta prior for stock (uniform (uninformative) prior can be commented in#
+#	or out in model description (line 57)) #
+#------------------------------------------------------------------------------##
+SMAX <- mean(esc[,2]) # mean escapement over time series#
+#SMAX <- 21300 # lake habitat (photosynthetic rate) based estimate of lake capacity#
+#
+bpmu = 1/SMAX # turn SMAX into beta prior#
+bptau = 1/((3*(1/SMAX))^2)  # set CV on prior#
+#------------------------------------------------------------------------------##
+#   Format data#
+#------------------------------------------------------------------------------##
+Y = nrow(age)             # number of calendar years observed#
+a.min = 3                 # minimum age class in data set#
+a.max = 6                 # maximum age class in data set#
+A = a.max - a.min + 1     # number of age classes#
+nRyrs = Y + A - 1         # number of recruitment years (see model code for details)#
+years = age[,"year"]
+(Y-a.min)
+(a.max + 1)

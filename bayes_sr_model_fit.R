@@ -7,14 +7,15 @@ esc = read.csv("data/EscTab.csv")
 harv = read.csv("data/HarTab.csv")
 
 #------------------------------------------------------------------------------#
-#   Set beta prior for stock  
+#   Set beta prior for stock (uniform (uninformative) prior can be commented in
+#	or out in model description (line 57)) 
 #------------------------------------------------------------------------------#
 
 SMAX <- mean(esc[,2]) # mean escapement over time series
 #SMAX <- 21300 # lake habitat (photosynthetic rate) based estimate of lake capacity
 
 bpmu = 1/SMAX # turn SMAX into beta prior
-bptau = 1/((3*(1/SMAX))^2)  # set CV on prior
+bptau = 1/(0.3)^2)  # set CV on prior
  
 #------------------------------------------------------------------------------#
 #   Format data
@@ -26,12 +27,12 @@ A = a.max - a.min + 1     # number of age classes
 nRyrs = Y + A - 1         # number of recruitment years (see model code for details)
 years = age[,"year"]
 
-# escapement: assume a 30% observation CV if directly observed, 50% otherwise
+# escapement: assume a 20% observation CV if directly observed, 40% otherwise
 
 S.cv = ifelse(esc[,3] == 1, 0.2, 0.40)
 S.obs = esc[,2]
 
-# harvest: assume a 15% observation CV if directly observed, 30% otherwise
+# harvest: assume a 15% observation CV for years when catch was high and dominated by commercial fishery, 30% in years since
 
 C.cv = ifelse(harv[,3] == 1, 0.15, 0.30)
 C.obs = harv[,2]
@@ -54,7 +55,7 @@ model {
   # priors for SR portion
   lnalpha ~ dunif(0, 3) 
   #beta ~ dunif(0,10)
-  beta ~ dnorm(bpmu,bptau)
+  #beta ~ dnorm(bpmu,bptau)
   beta.prior ~ dnorm(bpmu,bptau) #for ploting and checking
   tau.R ~ dgamma(0.01,0.01)  # white noise process error      
   phi ~ dunif(-0.99, 0.99)   # autocorrelation coefficient                                              
@@ -117,7 +118,7 @@ model {
     }
   }
   
-  # Calculate the numbers at age matrix as brood year recruits at age*proportion that matured that year
+  # Calculate the numbers at age matrix as brood year recruits at age (proportion that matured that year)
   for (t in 1:Y) {
     for(a in 1:A){
       N.ta[t,a] <- R[t+A-a] * p[t+A-a,a]
@@ -184,7 +185,7 @@ endtime[3]/60
 post = as.mcmc(jagsfit.p)
 mypost = as.matrix(post, chain=F)
 
-write.csv(mypost,"outputs/Atnarko_posteriors.June292018.csv")
+write.csv(mypost,"outputs/Atnarko_posteriors.sensitivity.July32018.csv")
 
 #------------------------------------------------------------------------------#
 # Model diagnostics and parameter summary

@@ -15,7 +15,7 @@ S.summ <- apply(S,2,quantile,probs=c(0.025,0.5,0.975))
 S.summ[2,43] <- outcomes.1[7,1,1]
 
 # generate plot
-jpeg("figures/Figure_4.new.jpeg",width=8, height=6,units="in",res=400,bg = "transparent")
+jpeg("figures/Figure_4.jpeg",width=8, height=6,units="in",res=400,bg = "transparent")
 #dev.new(width=8, height=6)
 par(new=T)
 
