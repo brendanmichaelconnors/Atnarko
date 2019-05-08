@@ -9,7 +9,7 @@ post.summ = function(post.samp, var) {
   # if parameter is indexed
   if(substr(var, nchar(var), nchar(var)) == "[") {
     post = post.samp[,substr(colnames(post.samp), 1, nchar(var)) == var]
-    summ = apply(post, 2, function(x) c(mean = mean(x), sd = sd(x), quantile(x, c(0.5, 0.025, 0.975))))
+    summ = apply(post, 2, function(x) c(mean = mean(x), sd = sd(x), quantile(x, c(0.5, 0.025, 0.975, 0.1, 0.9, 0.2, 0.8, 0.3, 0.7))))
     return(summ)
   }
   
@@ -113,14 +113,14 @@ process.iteration = function(samp) {
   # parameters
   alpha = unname(samp[substr(nms, 1, 5) == "alpha"])
   beta = unname(samp[substr(nms, 1, 5) == "beta"])
-  last_resid = unname(samp[substr(nms, 1, 13) == "log.resid.40."])
+  last_resid = unname(samp[substr(nms, 1, 13) == "log.resid[40]"])
   phi = unname(samp["phi"])
   sigma_R = unname(samp["sigma.R"])
-  mat.sch = c(as.numeric(samp["pi.1."]), as.numeric(samp["pi.2."]), as.numeric(samp["pi.3."]), as.numeric(samp["pi.4."]))
+  mat.sch = c(as.numeric(samp["pi[1]"]), as.numeric(samp["pi[2]"]), as.numeric(samp["pi[3]"]), as.numeric(samp["pi[4]"]))
   
   # states
-  S = c(as.numeric(samp["S.40."]), as.numeric(samp["S.41."]), as.numeric(samp["S.42."]), as.numeric(samp["S.43."]))
-  R = c(as.numeric(samp["R.44."]), as.numeric(samp["R.45."]), as.numeric(samp["R.46."]))
+  S = c(as.numeric(samp["S[40]"]), as.numeric(samp["S[41]"]), as.numeric(samp["S[42]"]), as.numeric(samp["S[43]"]))
+  R = c(as.numeric(samp["R[44]"]), as.numeric(samp["R[45]"]), as.numeric(samp["R[46]"]))
   
   # 3.) create output list
   output = list(

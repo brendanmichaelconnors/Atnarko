@@ -1,10 +1,9 @@
 
 model {
   # priors for SR portion
-  lnalpha ~ dunif(0, 3) 
-  #beta ~ dunif(0,10)
-  beta ~ dnorm(bpmu,bptau)
-  beta.prior ~ dnorm(bpmu,bptau) #for ploting and checking
+  lnalpha ~ dunif(0,3) 
+  beta ~ dunif(0,10)
+  #beta ~ dnorm(bpmu,bptau)
   tau.R ~ dgamma(0.01,0.01)  # white noise process error      
   phi ~ dunif(-0.99, 0.99)   # autocorrelation coefficient                                              
   log.resid.0 ~ dnorm(0, tau.red)  # starting residual for AR1 process
@@ -66,7 +65,7 @@ model {
     }
   }
   
-  # Calculate the numbers at age matrix as brood year recruits at age*proportion that matured that year
+  # Calculate the numbers at age matrix as brood year recruits at age (proportion that matured that year)
   for (t in 1:Y) {
     for(a in 1:A){
       N.ta[t,a] <- R[t+A-a] * p[t+A-a,a]

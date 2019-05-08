@@ -9,7 +9,7 @@ labs<-c(0,15,30,45,60,75,90,105,120)
 count<-seq(0,40,5)
 years<-seq(1975,2020,5)
 
-jpeg(filename = "figures/Figure_2.jpeg", width = 7, height = 3.5, units = "in", bg = "white", res = 400)
+jpeg(filename = "figures/figure_2.jpeg", width = 7, height = 3.5, units = "in", bg = "white", res = 400)
 #dev.new(width=7, height=3.5)
 
 par(mar=c(4,4,1,4))
@@ -27,6 +27,7 @@ mtext("Harvest (%)",side=4,adj=0.5,line=2.5)
 
 colors<-gray.colors(3, start = 0.3, end = 0.9, gamma = 2.2, alpha = NULL)
 legend(2005,0.9,c("Escapement","Commercial","FSC"),col=colors,pch=15,cex=0.9,bty="n")
+box(col="grey")
 
 dev.off()
 

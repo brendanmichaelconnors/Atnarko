@@ -2,20 +2,20 @@
 #   Load data  
 #------------------------------------------------------------------------------#
 
-age = read.csv("data/AgeCompTab.csv")
+age = read.delim("data/AgeCompTab.txt")
 esc = read.csv("data/EscTab.csv")
 harv = read.csv("data/HarTab.csv")
 
 #------------------------------------------------------------------------------#
-#   Set beta prior for stock (uniform (uninformative) prior can be commented in
-#	or out in model description (line 57)) 
+#   Set beta prior for stock (uniform (uninformative) prior can be commented
+#	out in model description (line 58)) 
 #------------------------------------------------------------------------------#
 
 SMAX <- mean(esc[,2]) # mean escapement over time series
 #SMAX <- 21300 # lake habitat (photosynthetic rate) based estimate of lake capacity
 
 bpmu = 1/SMAX # turn SMAX into beta prior
-bptau = 1/(0.3)^2)  # set CV on prior
+bptau = 1/(0.3^2)  # set CV on prior
  
 #------------------------------------------------------------------------------#
 #   Format data
@@ -29,16 +29,17 @@ years = age[,"year"]
 
 # escapement: assume a 20% observation CV if directly observed, 40% otherwise
 
-S.cv = ifelse(esc[,3] == 1, 0.2, 0.40)
+S.cv = ifelse(esc[,3] == 0.5, 1, 0.5)
 S.obs = esc[,2]
 
 # harvest: assume a 15% observation CV for years when catch was high and dominated by commercial fishery, 30% in years since
 
 C.cv = ifelse(harv[,3] == 1, 0.15, 0.30)
-C.obs = harv[,2]
+C.obs = harv[,2] # choose column that matches assumption about catch (#2 is baseline, 4 is double mixed stock catch pre collapse)
 
 # age composition: assume a ESS of 100 if directly observed, 25 otherwise
-ESS = ifelse(age$GoodData == 1, 100, 25)
+#ESS = ifelse(age$GoodData == 1, 100, 25)
+ESS = age$ESS
 X = age[,substr(names(age), 1, 1) == "X"]
 X = t(apply(X, 1, function(x) x/sum(x)))
 X = round(apply(X, 2, function(x) x * ESS))
@@ -53,10 +54,9 @@ modelFilename = "dep_mod.txt"
   cat("
 model {
   # priors for SR portion
-  lnalpha ~ dunif(0, 3) 
-  #beta ~ dunif(0,10)
+  lnalpha ~ dunif(0,3) 
+  beta ~ dunif(0,10)
   #beta ~ dnorm(bpmu,bptau)
-  beta.prior ~ dnorm(bpmu,bptau) #for ploting and checking
   tau.R ~ dgamma(0.01,0.01)  # white noise process error      
   phi ~ dunif(-0.99, 0.99)   # autocorrelation coefficient                                              
   log.resid.0 ~ dnorm(0, tau.red)  # starting residual for AR1 process
@@ -170,7 +170,7 @@ model {
 	jags.parms = c("R", "N", "S", "U", "alpha", "beta", "lnalpha", "phi", "C", "log.resid",
 	               "log.resid.0","sigma.R", "lnalpha.c", "mean.log.R0", "pi", "q", 
 	               "mean.R0", "sigma.R0","S.msy", "S.max", "S.eq", "U.msy", "gamma", 
-	               "D.sum", "p","log.S","beta.prior")
+	               "D.sum", "p","log.S")
 #------------------------------------------------------------------------------#
 #   Fit Model
 #------------------------------------------------------------------------------#
@@ -185,16 +185,18 @@ endtime[3]/60
 post = as.mcmc(jagsfit.p)
 mypost = as.matrix(post, chain=F)
 
-write.csv(mypost,"outputs/Atnarko_posteriors.sensitivity.July32018.csv")
+saveRDS(post,"outputs/Atnarko_posteriors.baseline.April302019.mcmc")
 
 #------------------------------------------------------------------------------#
 # Model diagnostics and parameter summary
 #------------------------------------------------------------------------------#
 
-#potential scale reduction factor
+#potential scale reduction factor and trace plots
 
-gelman.diag(post, multivariate = F)
+gelman.diag(post, multivariate = F) 
+plot.mcmc(post)
 
+# summarize posteriors for leading parameters and print
 R = post.summ(post, "R[")
 S = post.summ(post, "S[")
 N = post.summ(post, "N[")
@@ -213,7 +215,9 @@ U.msy = post.summ(post, "U.msy")
 
 round(rbind(alpha, beta, sigma, phi, S.msy, S.eq, S.max, U.msy), 2)
 
-mean(mypost[,'beta'])
+quantile(mypost[,'beta'],c(0.025,0.5,0.975))
+
+# re-index spawners, recruits, etc. 
 
 S <- S[,c(1,12,23,34,39:43,2:11,13:22,24:33,35:38)]
 R <- R[,c(1,12,23,34,42,43,44,45,46,2:11,13:22,24:33,35:41)]

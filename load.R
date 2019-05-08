@@ -7,4 +7,7 @@ library(plotrix)
 library(R2jags) 
 library(modeest) 
 library(gplots)
-
+library(ggplot2)
+library(tidyverse)
+library(viridis)
+library(coda)
