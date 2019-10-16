@@ -1,10 +1,11 @@
 # read in posteriors and simulation output
 
 #BASELINE
-sr_model.mcmc <- readRDS("outputs/Atnarko_posteriors.baseline.April302019.mcmc")
+sr_model.mcmc <- readRDS("outputs/Atnarko_posteriors.baseline.May142019.mcmc")
+forward_sims <- readRDS("outputs/forward_sims.temp_out.baseline.May142019")
+forward_res <- readRDS("outputs/forward_sims.static_out.baseline.May142019")
+
 posteriors = as.matrix(sr_model.mcmc, chain=F)
-forward_sims <- readRDS("outputs/forward_sims_baseline.temp_out.Apr302019")
-forward_res <- readRDS("outputs/forward_sims_baseline.static_out.Apr302019")
 
 outcomes.sims <- apply(forward_sims,c(1,2,4),quantile,probs=c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9),na.rm=T)
 outcomes.res <- apply(forward_res,c(1,2,4),mean,na.rm=T)

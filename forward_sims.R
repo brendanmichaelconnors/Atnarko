@@ -3,11 +3,14 @@
 #------------------------------------------------------------------------------#
 
 #load posterior samples
-sr_model.mcmc <- readRDS("outputs/Atnarko_posteriors.baseline.April302019.mcmc")
+sr_model.mcmc <- readRDS("outputs/Atnarko_posteriors.baseline.May142019.mcmc")
+#sr_model.mcmc <- readRDS("outputs/Atnarko_posteriors.2timesuncertain.May142019.mcmc")
+#sr_model.mcmc <- readRDS("outputs/Atnarko_posteriors.2timesmixedstock.May142019.mcmc")
+
 posteriors = as.matrix(sr_model.mcmc, chain=F)
 
 # set number of simulations and create array to store results 
-num.sims = 1000
+num.sims = 10000
 ny = 27 #(7 years plus length of forward sim)
 harvest_rate <- seq(0,0.4,length.out=21)
 temporal.outcomes <- array(NA,dim=c(ny,3,num.sims,length(harvest_rate)))
@@ -42,7 +45,7 @@ for (w in 1:length(harvest_rate)){
 		static.outcomes[,2,l,w] <- out$P[2]
 	}	
 }
-saveRDS(temporal.outcomes,"outputs/forward_sims_baseline.temp_out.Apr302019")  
-saveRDS(static.outcomes,"outputs/forward_sims_baseline.static_out.Apr302019")  
+saveRDS(temporal.outcomes,"outputs/forward_sims.temp_out.baseline.May142019.mcmc")  
+saveRDS(static.outcomes,"outputs/forward_sims.static_out.baseline.May142019.mcmc")  
 	
 (proc.time() - ptm)/60

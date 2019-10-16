@@ -29,17 +29,19 @@ years = age[,"year"]
 
 # escapement: assume a 20% observation CV if directly observed, 40% otherwise
 
-S.cv = ifelse(esc[,3] == 0.5, 1, 0.5)
+S.cv = ifelse(esc[,3] == 1, 0.5, 1)
+#S.cv = ifelse(esc[,3] == 1, 1, 2)
 S.obs = esc[,2]
 
 # harvest: assume a 15% observation CV for years when catch was high and dominated by commercial fishery, 30% in years since
 
 C.cv = ifelse(harv[,3] == 1, 0.15, 0.30)
+#C.cv = ifelse(harv[,3] == 1, 0.3, 0.6)
 C.obs = harv[,2] # choose column that matches assumption about catch (#2 is baseline, 4 is double mixed stock catch pre collapse)
 
-# age composition: assume a ESS of 100 if directly observed, 25 otherwise
-#ESS = ifelse(age$GoodData == 1, 100, 25)
+# age composition
 ESS = age$ESS
+#ESS = age$ESS/2
 X = age[,substr(names(age), 1, 1) == "X"]
 X = t(apply(X, 1, function(x) x/sum(x)))
 X = round(apply(X, 2, function(x) x * ESS))
@@ -185,7 +187,7 @@ endtime[3]/60
 post = as.mcmc(jagsfit.p)
 mypost = as.matrix(post, chain=F)
 
-saveRDS(post,"outputs/Atnarko_posteriors.baseline.April302019.mcmc")
+saveRDS(post,"outputs/Atnarko_posteriors.baseline.May142019.mcmc")
 
 #------------------------------------------------------------------------------#
 # Model diagnostics and parameter summary
